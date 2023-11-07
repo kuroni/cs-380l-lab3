@@ -7,12 +7,18 @@ void handle_error(const char* msg) {
 }
 
 // ELF helper functions
-void* set_brk(unsigned long start, unsigned long end, int prot) {
-    start = ELF_PAGEALIGN(start);
-    end = ELF_PAGEALIGN(end);
+void* set_brk(unsigned long start, unsigned long end, unsigned long size, int prot) {
+    if (size == -1) {
+        start = ELF_PAGEALIGN(start); // this is weird, for apager we use PAGEALIGN for this???
+        end = ELF_PAGEALIGN(end);
+        size = end - start;
+    } else {
+        start = ELF_PAGESTART(start);
+        size = ELF_PAGEALIGN(size);
+    }
     // need to place at exactly the start address
     int flags = MAP_PRIVATE | MAP_ANON | MAP_FIXED;
-    return end > start ? mmap((void*)start, end - start, prot, flags, -1, 0) : NULL;
+    return end > start ? mmap((void*)start, size, prot, flags, -1, 0) : NULL;
 }
 
 int make_prot(unsigned int p_flags) {
@@ -29,11 +35,15 @@ int make_prot(unsigned int p_flags) {
     return prot;
 }
 
-void* elf_map(int fd, unsigned long addr, Elf64_Phdr* eppnt, int prot, int flags) {
-    unsigned long size = eppnt->p_filesz + ELF_PAGEOFFSET(eppnt->p_vaddr);
+void* elf_map(int fd, unsigned long addr, unsigned long size, Elf64_Phdr* eppnt, int prot, int flags) {
+    if (size == -1) {
+        // size is unspecified, we need to calculate the size ourselves
+        size = eppnt->p_filesz + ELF_PAGEOFFSET(addr);
+    }
     unsigned long off = eppnt->p_offset - ELF_PAGEOFFSET(eppnt->p_vaddr);
     addr = ELF_PAGESTART(addr);
     size = ELF_PAGEALIGN(size);
+    off += addr - ELF_PAGESTART(eppnt->p_vaddr);
     return !size ? (void*)addr : mmap((void*)addr, size, prot, flags, fd, off);
 }
 

@@ -1,7 +1,8 @@
 #include "helper.h"
 
 void* sp;
-int fd;
+int fd, phdr_count;
+Elf64_Phdr phdr_table[PHDR_TABLE_SIZE];
 
 int create_elf_tables(struct linux_binprm_lite* bprm, Elf64_Ehdr* exec, unsigned long e_entry) {
     Elf64_auxv_t elf_info[MAX_ELF_INFO];
@@ -53,52 +54,45 @@ void print_phdr(Elf64_Phdr* phdr) {
 }
 
 int load_elf_binary(struct linux_binprm_lite* bprm, int fd, Elf64_Ehdr* elf_ex) {
-    int phdr_count = elf_ex->e_phnum;
+    phdr_count = elf_ex->e_phnum;
     if (lseek(fd, elf_ex->e_phoff, SEEK_SET) == EXIT_FAILURE) {
         handle_error("lseek");
     }
 
     unsigned long elf_bss = 0, elf_brk = 0;
     int bss_prot = 0;
+    int loaded = 0;
 
     for (int i = 0; i < phdr_count; i++) {
-        Elf64_Phdr elf_ppnt;
-        if (read(fd, &elf_ppnt, sizeof(Elf64_Phdr)) == EXIT_FAILURE) {
+        Elf64_Phdr* elf_ppnt = &phdr_table[i];
+        if (read(fd, elf_ppnt, sizeof(Elf64_Phdr)) == EXIT_FAILURE) {
             handle_error("read");
         }
         // fprintf(stderr, "%d:\n", i);
-        // print_phdr(&elf_ppnt);
+        // print_phdr(elf_ppnt);
         // fprintf(stderr, "\n");
 
         // almost verbatim copy from https://elixir.bootlin.com/linux/v6.4.14/source/fs/binfmt_elf.c#L1031
-        if (elf_ppnt.p_type != PT_LOAD) {
+        if (elf_ppnt->p_type != PT_LOAD || loaded) {
             continue;
         }
-        if (elf_brk > elf_bss) {
-            if (set_brk(elf_bss, elf_brk, -1, bss_prot) == MAP_FAILED) {
-                handle_error("mmap");
-            }
-        }
-        int elf_prot = make_prot(elf_ppnt.p_flags);
+        loaded = 1;
+        int elf_prot = make_prot(elf_ppnt->p_flags);
         int elf_flags = MAP_PRIVATE | MAP_FIXED | MAP_EXECUTABLE;
-        if (elf_map(fd, elf_ppnt.p_vaddr, -1, &elf_ppnt, elf_prot, elf_flags) == MAP_FAILED) {
+        if (elf_map(fd, elf_ppnt->p_vaddr, PAGE_SIZE, elf_ppnt, elf_prot, elf_flags) == MAP_FAILED) {
             handle_error("mmap");
         }
 
         unsigned long k;
-        k = elf_ppnt.p_vaddr + elf_ppnt.p_filesz;
+        k = elf_ppnt->p_vaddr + elf_ppnt->p_filesz;
         if (k > elf_bss) {
             elf_bss = k;
         }
-        k = elf_ppnt.p_vaddr + elf_ppnt.p_memsz;
+        k = elf_ppnt->p_vaddr + elf_ppnt->p_memsz;
         if (k > elf_brk) {
             bss_prot = elf_prot;
             elf_brk = k;
         }
-    }
-
-    if (set_brk(elf_bss, elf_brk, -1, bss_prot) == MAP_FAILED) {
-        handle_error("mmap");
     }
     if (elf_bss != elf_brk && padzero(elf_bss)) {
         handle_error("malloc");
@@ -151,9 +145,49 @@ void init_stack(int argc, char** argv, int envc, char** envp, struct linux_binpr
     }
 }
 
+void handler(int sig, siginfo_t* info, void* context) {
+    unsigned long addr = (unsigned long)info->si_addr;
+    int pt = -1;
+    for (int i = 0; i < phdr_count; i++) {
+        Elf64_Phdr* elf_ppnt = &phdr_table[i];
+        if (elf_ppnt->p_type != PT_LOAD) {
+            continue;
+        }
+        if (elf_ppnt->p_vaddr <= addr && addr <= elf_ppnt->p_vaddr + elf_ppnt->p_memsz) {
+            pt = i;
+            break;
+        }
+    }
+    if (pt == -1) {
+        exit(-EXIT_FAILURE);
+    } else {
+        Elf64_Phdr* elf_ppnt = &phdr_table[pt];
+        unsigned long vaddr = elf_ppnt->p_paddr;
+        unsigned long elf_bss = elf_ppnt->p_vaddr + elf_ppnt->p_filesz;
+        unsigned long elf_brk = elf_ppnt->p_vaddr + elf_ppnt->p_memsz;
+        int elf_prot = make_prot(elf_ppnt->p_flags);
+        int elf_flags = MAP_PRIVATE | MAP_FIXED | MAP_EXECUTABLE;
+        // bit of a weird condition on the right side, but we allow addr to venture slightly further than elf_bss
+        // as long as things are in the same page
+        if (vaddr <= addr && ELF_PAGESTART(addr) <= ELF_PAGESTART(elf_bss)) {
+            if (elf_map(fd, addr, PAGE_SIZE, elf_ppnt, elf_prot, elf_flags) == MAP_FAILED) {
+                handle_error("mmap");
+            }
+            if (elf_bss != elf_brk && ELF_PAGESTART(addr) == ELF_PAGESTART(elf_bss) && padzero(elf_bss)) {
+                handle_error("malloc");
+            }
+        } else {
+            // in case elf_brk is actually very close to addr
+            if (set_brk(addr, elf_brk, PAGE_SIZE, elf_prot) == MAP_FAILED) {
+                exit(-EXIT_FAILURE);
+            }
+        }
+    }
+}
+
 int main(int argc, char** argv, char** envp) {
     if (argc < 2) {
-        printf("USAGE: ./apager <filename> <args>");
+        printf("USAGE: ./dpager <filename> <args>");
         return EXIT_FAILURE;
     }
     fd = open(argv[1], O_RDONLY);
@@ -169,6 +203,11 @@ int main(int argc, char** argv, char** envp) {
     for (char** _ = envp; *_ != NULL; _++) {
         envc++;
     }
+    // initialize sigsegv handler
+    struct sigaction action;
+    action.sa_sigaction = handler;
+    action.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigaction(SIGSEGV, &action, NULL);
     struct linux_binprm_lite bprm;
     init_stack(argc, argv, envc, envp, &bprm);
     load_elf_binary(&bprm, fd, &elf_ex);

@@ -22,6 +22,7 @@ void* set_brk(unsigned long start, unsigned long end, unsigned long size, int pr
     }
     // need to place at exactly the start address
     int flags = MAP_PRIVATE | MAP_ANON | MAP_FIXED;
+    fprintf(stderr, "bss mapping: size %lu, address %p\n", size, (void*)start);
     return end > start ? mmap((void*)start, size, prot, flags, -1, 0) : NULL;
 }
 
@@ -48,6 +49,7 @@ void* elf_map(int fd, unsigned long addr, unsigned long size, Elf64_Phdr* eppnt,
     addr = ELF_PAGESTART(addr);
     size = ELF_PAGEALIGN(size);
     off += addr - ELF_PAGESTART(eppnt->p_vaddr);
+    fprintf(stderr, "file-backed mapping: file %d, offset %lu, size %lu, address %p\n", fd, off, size, (void*)addr);
     return !size ? (void*)addr : mmap((void*)addr, size, prot, flags, fd, off);
 }
 

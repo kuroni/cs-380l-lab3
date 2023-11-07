@@ -38,7 +38,7 @@ int create_elf_tables(struct linux_binprm_lite* bprm, Elf64_Ehdr* exec, unsigned
     *((char**)stack) = (char*)NULL; stack += sizeof(char*);
     // put auxv
     memcpy(stack, elf_info, sizeof(Elf64_auxv_t) * ei_index);
-    stack_check(sp, argc, argv);
+    // stack_check(sp, argc, argv);
     return EXIT_SUCCESS;
 }
 
@@ -140,14 +140,14 @@ void init_stack(int argc, char** argv, int envc, char** envp, struct linux_binpr
         end_of_stack -= len;
         bprm->envp[i] = end_of_stack;
         memcpy(end_of_stack, envp[i], len);
-        fprintf(stderr, "envp[%d]: %s\n", i, (char*)end_of_stack);
+        // fprintf(stderr, "envp[%d]: %s\n", i, (char*)end_of_stack);
     }
     for (int i = argc - 1; i > 0; i--) {
         size_t len = strlen(argv[i]) + 1;
         end_of_stack -= len;
         bprm->argv[i - 1] = end_of_stack;
         memcpy(end_of_stack, argv[i], len);
-        fprintf(stderr, "argv[%d]: %s\n", i - 1, (char*)end_of_stack);
+        // fprintf(stderr, "argv[%d]: %s\n", i - 1, (char*)end_of_stack);
     }
 }
 

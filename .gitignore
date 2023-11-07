@@ -7,3 +7,5 @@ hpager
 loader/test/simple
 loader/test/static_array
 loader/test/random_access
+loader/test/nuller
+loader/test/mallocer

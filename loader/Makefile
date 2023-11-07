@@ -1,37 +1,21 @@
 CC := gcc
 CFLAGS := -g -Wall
 INCFLAGS := -Iinclude
+SRC := $(wildcard src/*.cpp)
 
-.PHONY: test clean
+.PHONY: clean
 
-helper.o: src/helper.c include/helper.h
-	$(CC) $(CFLAGS) -c $< $(INCFLAGS)
+bin/%.o: src/%.c include/helper.h
+	$(CC) $(CFLAGS) -c -o $@ $< $(INCFLAGS)
 
-apager.o: src/apager.c include/helper.h
-	$(CC) $(CFLAGS) -c $< $(INCFLAGS)
-
-dpager.o: src/dpager.c include/helper.h
-	$(CC) $(CFLAGS) -c $< $(INCFLAGS)
-
-hpager.o: src/hpager.c include/helper.h
-	$(CC) $(CFLAGS) -c $< $(INCFLAGS)
-
-apager: helper.o apager.o
+%: bin/%.o bin/helper.o
 	$(CC) $(CFLAGS) -o $@ $^
 
-dpager: helper.o dpager.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-hpager: helper.o hpager.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-test: test/*.c
-	$(CC) -static -o test/simple test/simple.c
-	$(CC) -static -o test/static_array test/static_array.c
-	$(CC) -static -o test/random_access test/random_access.c
-	$(CC) -static -o test/nuller test/nuller.c
+test/%: test/%.c
+	$(CC) -static -o $@ $^
 
 clean:
-	rm -r *.o || \
-	rm apager dpager hpager || \
-	rm test/random_access test/simple test/static_array
+	rm $(patsubst src/%.c, bin/%.o, $(wildcard src/*.c)) || \
+	rm $(patsubst src/%.c, ./%, $(wildcard src/*.c)) || \
+	rm $(patsubst test/%.c, test/%, $(wildcard test/*.c)) || \
+	true

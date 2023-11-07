@@ -14,7 +14,11 @@ void* set_brk(unsigned long start, unsigned long end, unsigned long size, int pr
         size = end - start;
     } else {
         start = ELF_PAGESTART(start);
+        end = ELF_PAGEALIGN(end);
         size = ELF_PAGEALIGN(size);
+        if (end - start < size) {
+            size = end - start;
+        }
     }
     // need to place at exactly the start address
     int flags = MAP_PRIVATE | MAP_ANON | MAP_FIXED;

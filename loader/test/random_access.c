@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define SIZE 1024768
-#define JUMP 16384
+#define SIZE 268435456
+#define JUMP 1048576
 
 int fib[SIZE];
 
@@ -13,5 +13,5 @@ int main(int argc, char** argv) {
     for (int i = 2; i * JUMP < SIZE; i++) {
         FIB(i) = FIB(i - 1) + FIB(i - 2);
     }
-    printf("%d\n", FIB(SIZE / JUMP));
+    printf("%d\n", FIB((SIZE - 1) / JUMP));
 }

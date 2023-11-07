@@ -29,6 +29,7 @@ test: test/*.c
 	$(CC) -static -o test/simple test/simple.c
 	$(CC) -static -o test/static_array test/static_array.c
 	$(CC) -static -o test/random_access test/random_access.c
+	$(CC) -static -o test/nuller test/nuller.c
 
 clean:
 	rm -r *.o || \

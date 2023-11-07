@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define SIZE 1024768
+#define SIZE 268435456
 
 int fib[SIZE];
 

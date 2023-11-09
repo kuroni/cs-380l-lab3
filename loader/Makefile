@@ -1,7 +1,6 @@
 CC := gcc
 CFLAGS := -g -Wall
 INCFLAGS := -Iinclude
-SRC := $(wildcard src/*.cpp)
 
 .PHONY: clean
 
